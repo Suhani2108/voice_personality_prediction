@@ -3,7 +3,7 @@ import numpy as np
 import librosa
 import tempfile
 
-# ---------- PAGE CONFIG ----------
+# ---------- PAGE ----------
 st.set_page_config(page_title="Voice Emotion AI", page_icon="🎤")
 
 # ---------- CSS ----------
@@ -37,8 +37,6 @@ st.markdown("""
     background: linear-gradient(90deg, #6366f1, #38bdf8);
     color: white;
     font-weight: bold;
-    border: none;
-    padding: 10px 20px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -50,34 +48,43 @@ st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>
 # ---------- FEATURE EXTRACTION ----------
 def extract_features(file_path):
     audio, sr = librosa.load(file_path, duration=4)
-    energy = np.mean(np.abs(audio))
-    pitch = np.mean(librosa.yin(audio, fmin=50, fmax=300))
-    return energy, pitch
 
-# ---------- PREDICTION LOGIC ----------
-def predict_emotion(energy, pitch):
-    if energy > 0.1 and pitch > 150:
+    energy = np.mean(np.abs(audio))
+    zcr = np.mean(librosa.feature.zero_crossing_rate(audio))
+    spectral_centroid = np.mean(librosa.feature.spectral_centroid(y=audio, sr=sr))
+    pitch = np.mean(librosa.yin(audio, fmin=50, fmax=300))
+
+    return energy, zcr, spectral_centroid, pitch
+
+# ---------- IMPROVED PREDICTION ----------
+def predict_emotion(energy, zcr, centroid, pitch):
+
+    if energy > 0.15 and pitch > 180:
         return "😄 Happy"
-    elif energy < 0.05:
-        return "😢 Sad"
-    elif pitch > 200:
-        return "😲 Surprised"
-    elif energy > 0.08:
+
+    elif energy > 0.18 and zcr > 0.1:
         return "😡 Angry"
-    else:
+
+    elif pitch > 220 and centroid > 3000:
+        return "😲 Surprised"
+
+    elif energy < 0.04:
+        return "😢 Sad"
+
+    elif energy < 0.08 and pitch < 140:
         return "😐 Neutral"
 
-# ---------- SESSION STATE ----------
+    else:
+        return "😌 Calm"
+
+# ---------- SESSION ----------
 if "rec_key" not in st.session_state:
     st.session_state.rec_key = 0
 
-# ---------- RECORD SECTION ----------
+# ---------- RECORD ----------
 st.subheader("🎙️ Record your voice")
 
-audio_data = st.audio_input(
-    "Tap to record",
-    key=f"rec_{st.session_state.rec_key}"
-)
+audio_data = st.audio_input("Tap to record", key=f"rec_{st.session_state.rec_key}")
 
 if audio_data:
     st.audio(audio_data)
@@ -86,12 +93,12 @@ if audio_data:
         tmp.write(audio_data.read())
         path = tmp.name
 
-    energy, pitch = extract_features(path)
-    prediction = predict_emotion(energy, pitch)
+    energy, zcr, centroid, pitch = extract_features(path)
+    prediction = predict_emotion(energy, zcr, centroid, pitch)
 
     st.success(f"✨ Predicted Emotion: {prediction}")
 
-# ---------- DELETE BUTTON ----------
+# ---------- DELETE ----------
 if st.button("🗑️ Delete Recording"):
     st.session_state.rec_key += 1
     st.rerun()
@@ -99,19 +106,19 @@ if st.button("🗑️ Delete Recording"):
 # ---------- DIVIDER ----------
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-# ---------- UPLOAD SECTION ----------
+# ---------- UPLOAD ----------
 st.subheader("📂 Upload Audio File")
 
-uploaded_file = st.file_uploader("Upload WAV", type=["wav"])
+file = st.file_uploader("Upload WAV", type=["wav"])
 
-if uploaded_file:
-    st.audio(uploaded_file)
+if file:
+    st.audio(file)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tmp.write(uploaded_file.read())
+        tmp.write(file.read())
         path = tmp.name
 
-    energy, pitch = extract_features(path)
-    prediction = predict_emotion(energy, pitch)
+    energy, zcr, centroid, pitch = extract_features(path)
+    prediction = predict_emotion(energy, zcr, centroid, pitch)
 
     st.success(f"✨ Predicted Emotion: {prediction}")
