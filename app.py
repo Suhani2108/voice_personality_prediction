@@ -2,7 +2,6 @@ import streamlit as st
 import numpy as np
 import librosa
 import tempfile
-import joblib
 
 # ---------- PAGE ----------
 st.set_page_config(page_title="Voice Emotion AI", page_icon="🎤")
@@ -38,17 +37,27 @@ st.markdown("""
 
 # ---------- HEADER ----------
 st.markdown('<div class="title">🎤 Voice Emotion AI</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Analyze emotions from your voice</div>', unsafe_allow_html=True)
 
-# ---------- LOAD MODEL ----------
-model = joblib.load("model.pkl")
-
-# ---------- FEATURE ----------
+# ---------- FEATURE EXTRACTION ----------
 def extract_features(file_path):
     audio, sr = librosa.load(file_path, duration=4)
-    audio = librosa.util.normalize(audio)
-    mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40)
-    return np.mean(mfcc.T, axis=0).reshape(1, -1)
+    energy = np.mean(np.abs(audio))
+    pitch = np.mean(librosa.yin(audio, fmin=50, fmax=300))
+    return energy, pitch
+
+# ---------- SIMPLE AI LOGIC ----------
+def predict_emotion(energy, pitch):
+    if energy > 0.1 and pitch > 150:
+        return "😄 Happy"
+    elif energy < 0.05:
+        return "😢 Sad"
+    elif pitch > 200:
+        return "😲 Surprised"
+    elif energy > 0.08:
+        return "😡 Angry"
+    else:
+        return "😐 Neutral"
 
 # ---------- RECORD ----------
 audio_data = st.audio_input("🎙️ Record your voice")
@@ -60,8 +69,8 @@ if audio_data:
         tmp.write(audio_data.read())
         path = tmp.name
 
-    features = extract_features(path)
-    prediction = model.predict(features)[0]
+    energy, pitch = extract_features(path)
+    prediction = predict_emotion(energy, pitch)
 
     st.success(f"✨ Predicted Emotion: {prediction}")
 
@@ -78,7 +87,7 @@ if file:
         tmp.write(file.read())
         path = tmp.name
 
-    features = extract_features(path)
-    prediction = model.predict(features)[0]
+    energy, pitch = extract_features(path)
+    prediction = predict_emotion(energy, pitch)
 
     st.success(f"✨ Predicted Emotion: {prediction}")
