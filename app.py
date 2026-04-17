@@ -2,7 +2,8 @@ import streamlit as st
 import numpy as np
 import librosa
 import tempfile
-import joblib
+import os
+from sklearn.ensemble import RandomForestClassifier
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Voice Emotion AI", page_icon="🎤")
@@ -40,21 +41,56 @@ st.markdown("""
 st.markdown('<div class="title">🎤 Voice Emotion AI</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>', unsafe_allow_html=True)
 
-# ---------- LOAD MODEL ----------
-try:
-    model = joblib.load("model.pkl")
-except:
-    model = None
+emotion_map = {
+    "01": "Neutral",
+    "02": "Calm",
+    "03": "Happy",
+    "04": "Sad",
+    "05": "Angry",
+    "06": "Fearful",
+    "07": "Disgust",
+    "08": "Surprised"
+}
 
 # ---------- FEATURE EXTRACTION ----------
 def extract_features(file_path):
-    audio, sr = librosa.load(file_path, duration=4)
-    audio = librosa.util.normalize(audio)
+    audio, sr = librosa.load(file_path, duration=3)
+    mfcc = np.mean(librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40).T, axis=0)
+    return mfcc
 
-    mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40)
-    mfcc = np.mean(mfcc.T, axis=0)
+# ---------- TRAIN MODEL ----------
+@st.cache_resource
+def train_model():
+    X = []
+    y = []
 
-    return mfcc.reshape(1, -1)
+    DATA_PATH = "dataset"   # dataset folder required
+
+    for root, dirs, files in os.walk(DATA_PATH):
+        for file in files:
+            if file.endswith(".wav"):
+                try:
+                    emotion = file.split("-")[2]
+                    label = emotion_map.get(emotion)
+
+                    file_path = os.path.join(root, file)
+                    features = extract_features(file_path)
+
+                    X.append(features)
+                    y.append(label)
+                except:
+                    pass
+
+    X = np.array(X)
+    y = np.array(y)
+
+    model = RandomForestClassifier()
+    model.fit(X, y)
+
+    return model
+
+# Load / train model
+model = train_model()
 
 # ---------- SESSION ----------
 if "rec_key" not in st.session_state:
@@ -72,12 +108,9 @@ if audio_data is not None:
         tmp.write(audio_data.read())
         temp_path = tmp.name
 
-    features = extract_features(temp_path)
+    features = extract_features(temp_path).reshape(1, -1)
 
-    if model:
-        prediction = model.predict(features)[0]
-    else:
-        prediction = "⚠ Model Missing"
+    prediction = model.predict(features)[0]
 
     st.success(f"✨ Predicted Emotion: {prediction}")
 
@@ -101,11 +134,8 @@ if uploaded_file is not None:
         tmp.write(uploaded_file.read())
         temp_path = tmp.name
 
-    features = extract_features(temp_path)
+    features = extract_features(temp_path).reshape(1, -1)
 
-    if model:
-        prediction = model.predict(features)[0]
-    else:
-        prediction = "⚠ Model Missing"
+    prediction = model.predict(features)[0]
 
     st.success(f"✨ Predicted Emotion: {prediction}")
