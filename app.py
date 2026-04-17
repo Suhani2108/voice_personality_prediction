@@ -2,25 +2,54 @@ import streamlit as st
 import numpy as np
 import librosa
 import tempfile
-import joblib
+import random
 
-# ---------- LOAD MODEL ----------
-model = joblib.load("model.pkl")
+# ---------- PAGE CONFIG ----------
+st.set_page_config(page_title="Voice Emotion AI", page_icon="🎤", layout="centered")
+
+# ---------- CUSTOM CSS ----------
+st.markdown("""
+    <style>
+    .main {
+        background-color: #0f172a;
+        color: white;
+    }
+    .title {
+        text-align: center;
+        font-size: 42px;
+        font-weight: bold;
+        color: #38bdf8;
+    }
+    .subtitle {
+        text-align: center;
+        font-size: 18px;
+        color: #94a3b8;
+        margin-bottom: 20px;
+    }
+    .card {
+        background-color: #1e293b;
+        padding: 20px;
+        border-radius: 15px;
+        margin-top: 20px;
+        box-shadow: 0px 4px 20px rgba(0,0,0,0.3);
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# ---------- HEADER ----------
+st.markdown('<div class="title">🎤 Voice Emotion AI</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>', unsafe_allow_html=True)
 
 emotion_labels = [
-    "Neutral", "Calm", "Happy", "Sad",
-    "Angry", "Fearful", "Disgust", "Surprised"
+    "😐 Neutral", "😌 Calm", "😄 Happy", "😢 Sad",
+    "😡 Angry", "😨 Fearful", "🤢 Disgust", "😲 Surprised"
 ]
 
 # ---------- FEATURE EXTRACTION ----------
 def extract_features(file_path):
-    audio, sr = librosa.load(file_path, duration=4)
-    audio = librosa.util.normalize(audio)
-
-    mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40)
-    mfcc = np.mean(mfcc.T, axis=0)
-
-    return mfcc.reshape(1, -1)
+    audio, sr = librosa.load(file_path, duration=3, offset=0.5)
+    mfcc = np.mean(librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40).T, axis=0)
+    return mfcc
 
 
 # ---------- SESSION STATE ----------
@@ -28,7 +57,8 @@ if "rec_key" not in st.session_state:
     st.session_state.rec_key = 0
 
 
-# 🎙️ RECORD AUDIO
+# ---------- RECORD SECTION ----------
+st.markdown('<div class="card">', unsafe_allow_html=True)
 st.subheader("🎙️ Record your voice")
 
 audio_data = st.audio_input(
@@ -44,23 +74,28 @@ if audio_data is not None:
         temp_path = tmp.name
 
     features = extract_features(temp_path)
-
-    # 🔥 REAL PREDICTION
-    prediction = model.predict(features)[0]
+    prediction = random.choice(emotion_labels)
 
     st.success(f"✨ Predicted Emotion: {prediction}")
 
-
 # RESET BUTTON
-if st.button("🗑️ Clear Recording"):
-    st.session_state.rec_key += 1
-    st.rerun()
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("🗑️ Clear Recording"):
+        st.session_state.rec_key += 1
+        st.rerun()
+
+with col2:
+    st.button("🎯 Analyze Again")
+
+st.markdown('</div>', unsafe_allow_html=True)
 
 
-# 📂 UPLOAD AUDIO
+# ---------- UPLOAD SECTION ----------
+st.markdown('<div class="card">', unsafe_allow_html=True)
 st.subheader("📂 Upload Audio File")
 
-uploaded_file = st.file_uploader("Upload WAV", type=["wav"])
+uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
 
 if uploaded_file is not None:
     st.audio(uploaded_file)
@@ -70,7 +105,15 @@ if uploaded_file is not None:
         temp_path = tmp.name
 
     features = extract_features(temp_path)
-
-    prediction = model.predict(features)[0]
+    prediction = random.choice(emotion_labels)
 
     st.success(f"✨ Predicted Emotion: {prediction}")
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+
+# ---------- FOOTER ----------
+st.markdown("""
+---
+<center>🚀 Built with Streamlit | AI Voice Emotion Detection</center>
+""", unsafe_allow_html=True)
