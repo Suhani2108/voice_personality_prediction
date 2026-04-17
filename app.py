@@ -1,28 +1,60 @@
 import streamlit as st
 import numpy as np
 import tempfile
+import librosa
 from tensorflow.keras.models import load_model
-from feature_extraction import extract_features
 
-model = load_model("emotion_model.h5")
+# Load model safely
+@st.cache_resource
+def load_my_model():
+    return load_model("emotion_model.h5")
 
-st.title("🎤 Voice Personality Predictor")
+model = load_my_model()
 
-uploaded_file = st.file_uploader("Upload .wav file", type=["wav"])
+# Emotion labels
+emotion_labels = [
+    "Neutral",
+    "Calm",
+    "Happy",
+    "Sad",
+    "Angry",
+    "Fearful",
+    "Disgust",
+    "Surprised"
+]
+
+# Feature extraction
+def extract_features(file_path):
+    audio, sr = librosa.load(file_path, duration=3, offset=0.5)
+    mfcc = np.mean(librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40).T, axis=0)
+    return mfcc
+
+# UI
+st.title("🎤 Voice Emotion Detector")
+st.write("Upload a .wav audio file")
+
+uploaded_file = st.file_uploader("Choose a WAV file", type=["wav"])
 
 if uploaded_file is not None:
-    # temp file create
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tmp.write(uploaded_file.read())
-        temp_path = tmp.name
+    try:
+        # Save temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            tmp.write(uploaded_file.read())
+            temp_path = tmp.name
 
-    st.audio(uploaded_file)  # play audio
+        # Play audio
+        st.audio(uploaded_file, format="audio/wav")
 
-    # feature extraction
-    features = extract_features(temp_path)
-    features = np.expand_dims(features, axis=0)
+        # Extract features
+        features = extract_features(temp_path)
+        features = np.expand_dims(features, axis=0)
 
-    prediction = model.predict(features)
-    pred = np.argmax(prediction)
+        # Predict
+        prediction = model.predict(features)
+        predicted_class = np.argmax(prediction)
 
-    st.success(f"Prediction: {pred}")
+        # Output
+        st.success(f"Predicted Emotion: {emotion_labels[predicted_class]}")
+
+    except Exception as e:
+        st.error(f"Error: {e}")
