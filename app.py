@@ -17,7 +17,7 @@ st.markdown("""
 }
 .title {
     text-align: center;
-    font-size: 48px;
+    font-size: 42px;
     font-weight: bold;
     background: linear-gradient(90deg, #38bdf8, #6366f1);
     -webkit-background-clip: text;
@@ -25,9 +25,9 @@ st.markdown("""
 }
 .subtitle {
     text-align: center;
-    font-size: 18px;
+    font-size: 16px;
     color: #cbd5f5;
-    margin-bottom: 25px;
+    margin-bottom: 20px;
 }
 .divider {
     height: 2px;
@@ -41,6 +41,7 @@ st.markdown("""
 st.markdown('<div class="title">🎤 Voice Emotion AI</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>', unsafe_allow_html=True)
 
+# ---------- EMOTION MAP ----------
 emotion_map = {
     "01": "Neutral",
     "02": "Calm",
@@ -54,9 +55,12 @@ emotion_map = {
 
 # ---------- FEATURE EXTRACTION ----------
 def extract_features(file_path):
-    audio, sr = librosa.load(file_path, duration=3)
-    mfcc = np.mean(librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40).T, axis=0)
-    return mfcc
+    try:
+        audio, sr = librosa.load(file_path, duration=3)
+        mfcc = np.mean(librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40).T, axis=0)
+        return mfcc
+    except:
+        return None
 
 # ---------- TRAIN MODEL ----------
 @st.cache_resource
@@ -64,22 +68,44 @@ def train_model():
     X = []
     y = []
 
-    DATA_PATH = "dataset"   # dataset folder required
+    DATA_PATH = "dataset"
+
+    if not os.path.exists(DATA_PATH):
+        st.error("❌ Dataset folder missing")
+        return None
 
     for root, dirs, files in os.walk(DATA_PATH):
         for file in files:
             if file.endswith(".wav"):
                 try:
-                    emotion = file.split("-")[2]
-                    label = emotion_map.get(emotion)
+                    parts = file.split("-")
 
-                    file_path = os.path.join(root, file)
-                    features = extract_features(file_path)
+                    if len(parts) < 3:
+                        continue
+
+                    code = parts[2]
+
+                    if code not in emotion_map:
+                        continue
+
+                    label = emotion_map[code]
+
+                    path = os.path.join(root, file)
+
+                    features = extract_features(path)
+
+                    if features is None:
+                        continue
 
                     X.append(features)
                     y.append(label)
+
                 except:
-                    pass
+                    continue
+
+    if len(X) == 0:
+        st.error("❌ Dataset empty or invalid")
+        return None
 
     X = np.array(X)
     y = np.array(y)
@@ -89,7 +115,7 @@ def train_model():
 
     return model
 
-# Load / train model
+# ---------- LOAD MODEL ----------
 model = train_model()
 
 # ---------- SESSION ----------
@@ -108,9 +134,12 @@ if audio_data is not None:
         tmp.write(audio_data.read())
         temp_path = tmp.name
 
-    features = extract_features(temp_path).reshape(1, -1)
+    features = extract_features(temp_path)
 
-    prediction = model.predict(features)[0]
+    if model and features is not None:
+        prediction = model.predict([features])[0]
+    else:
+        prediction = "⚠ Model/Data Issue"
 
     st.success(f"✨ Predicted Emotion: {prediction}")
 
@@ -134,8 +163,11 @@ if uploaded_file is not None:
         tmp.write(uploaded_file.read())
         temp_path = tmp.name
 
-    features = extract_features(temp_path).reshape(1, -1)
+    features = extract_features(temp_path)
 
-    prediction = model.predict(features)[0]
+    if model and features is not None:
+        prediction = model.predict([features])[0]
+    else:
+        prediction = "⚠ Model/Data Issue"
 
     st.success(f"✨ Predicted Emotion: {prediction}")
