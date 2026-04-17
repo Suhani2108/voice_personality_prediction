@@ -19,16 +19,20 @@ def extract_features(file_path):
     return mfcc
 
 
-# 🔁 SESSION RESET
-if "clear" not in st.session_state:
-    st.session_state.clear = False
+# 🔁 SESSION STATE FOR RESET
+if "rec_key" not in st.session_state:
+    st.session_state.rec_key = 0
 
-# 🎙️ RECORD AUDIO
+
+# 🎙️ RECORD AUDIO (key changes every reset)
 st.subheader("🎙️ Record your voice")
 
-audio_data = st.audio_input("Record your voice", key="recorder")
+audio_data = st.audio_input(
+    "Record your voice",
+    key=f"recorder_{st.session_state.rec_key}"
+)
 
-if audio_data is not None and not st.session_state.clear:
+if audio_data is not None:
     st.audio(audio_data)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
@@ -41,9 +45,9 @@ if audio_data is not None and not st.session_state.clear:
     st.success(f"Predicted Emotion: {prediction}")
 
 
-# 🔥 CLEAR BUTTON
-if st.button("🔄 Record Again"):
-    st.session_state.clear = True
+# 🔥 DELETE / RESET BUTTON (REAL FIX)
+if st.button("🗑️ Delete Recording"):
+    st.session_state.rec_key += 1   # key change = reset widget
     st.rerun()
 
 
