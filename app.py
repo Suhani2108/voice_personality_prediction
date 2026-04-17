@@ -5,40 +5,59 @@ import tempfile
 import random
 
 # ---------- PAGE CONFIG ----------
-st.set_page_config(page_title="Voice Emotion AI", page_icon="🎤", layout="centered")
-
 st.markdown("""
 <style>
-.main {
-    background-color: #0f172a;
+/* Background Gradient */
+.stApp {
+    background: linear-gradient(135deg, #0f172a, #1e293b, #020617);
     color: white;
 }
 
+/* Title */
 .title {
     text-align: center;
-    font-size: 40px;
+    font-size: 48px;
     font-weight: bold;
-    color: #38bdf8;
+    background: linear-gradient(90deg, #38bdf8, #6366f1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
+/* Subtitle */
 .subtitle {
     text-align: center;
-    font-size: 16px;
-    color: #94a3b8;
+    font-size: 18px;
+    color: #cbd5f5;
     margin-bottom: 30px;
 }
 
-/* Remove card style */
-.section {
-    margin-top: 30px;
+/* Glow line */
+.divider {
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #38bdf8, transparent);
+    margin: 30px 0;
 }
 
-/* Divider line */
-.divider {
-    height: 1px;
-    background: #334155;
-    margin: 25px 0;
-    border-radius: 5px;
+/* Buttons */
+.stButton > button {
+    border-radius: 10px;
+    background: linear-gradient(90deg, #6366f1, #38bdf8);
+    color: white;
+    font-weight: bold;
+    border: none;
+    padding: 10px 20px;
+}
+
+/* Hover effect */
+.stButton > button:hover {
+    transform: scale(1.05);
+    transition: 0.3s;
+}
+
+/* Audio player */
+audio {
+    border-radius: 10px;
+    width: 100%;
 }
 </style>
 """, unsafe_allow_html=True)
