@@ -1,15 +1,8 @@
 import streamlit as st
 import numpy as np
-import tempfile
 import librosa
-from tensorflow.keras.models import load_model
-
-# Load model safely
-@st.cache_resource
-def load_my_model():
-    return load_model("emotion_model.h5")
-
-model = load_my_model()
+import tempfile
+import random
 
 # Emotion labels
 emotion_labels = [
@@ -23,14 +16,13 @@ emotion_labels = [
     "Surprised"
 ]
 
-# Feature extraction
+# Feature extraction (for demo)
 def extract_features(file_path):
     audio, sr = librosa.load(file_path, duration=3, offset=0.5)
     mfcc = np.mean(librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40).T, axis=0)
     return mfcc
 
-# UI
-st.title("🎤 Voice Emotion Detector")
+st.title("🎤 Voice Emotion Detector (Demo)")
 st.write("Upload a .wav audio file")
 
 uploaded_file = st.file_uploader("Choose a WAV file", type=["wav"])
@@ -42,19 +34,15 @@ if uploaded_file is not None:
             tmp.write(uploaded_file.read())
             temp_path = tmp.name
 
-        # Play audio
         st.audio(uploaded_file, format="audio/wav")
 
         # Extract features
         features = extract_features(temp_path)
-        features = np.expand_dims(features, axis=0)
 
-        # Predict
-        prediction = model.predict(features)
-        predicted_class = np.argmax(prediction)
+        # Dummy prediction (random for demo)
+        prediction = random.choice(emotion_labels)
 
-        # Output
-        st.success(f"Predicted Emotion: {emotion_labels[predicted_class]}")
+        st.success(f"Predicted Emotion: {prediction}")
 
     except Exception as e:
         st.error(f"Error: {e}")
