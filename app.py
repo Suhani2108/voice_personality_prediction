@@ -3,9 +3,13 @@ import numpy as np
 import librosa
 import tempfile
 import joblib
+
+# ---------- PAGE CONFIG ----------
+st.set_page_config(page_title="Voice Emotion AI", page_icon="🎤")
+
+# ---------- CSS ----------
 st.markdown("""
 <style>
-/* Background Gradient */
 .stApp {
     background: linear-gradient(135deg, #0f172a, #1e293b, #020617);
     color: white;
@@ -29,14 +33,14 @@ st.markdown("""
     margin-bottom: 30px;
 }
 
-/* Glow line */
+/* Divider */
 .divider {
     height: 2px;
     background: linear-gradient(90deg, transparent, #38bdf8, transparent);
-    margin: 30px 0;
+    margin: 25px 0;
 }
 
-/* Buttons */
+/* Button */
 .stButton > button {
     border-radius: 10px;
     background: linear-gradient(90deg, #6366f1, #38bdf8);
@@ -45,35 +49,15 @@ st.markdown("""
     border: none;
     padding: 10px 20px;
 }
-
-/* Hover effect */
-.stButton > button:hover {
-    transform: scale(1.05);
-    transition: 0.3s;
-}
-
-/* Audio player */
-audio {
-    border-radius: 10px;
-    width: 100%;
-}
 </style>
 """, unsafe_allow_html=True)
-# ---------- HEADER ----------
-st.markdown('<div class="title">🎤 Voice Personality AI</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>', unsafe_allow_html=True)
 
-emotion_labels = [
-    "😐 Neutral", "😌 Calm", "😄 Happy", "😢 Sad",
-    "😡 Angry", "😨 Fearful", "🤢 Disgust", "😲 Surprised"
+# ---------- HEADER ----------
+st.markdown('<div class="title">🎤 Voice Emotion AI</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>', unsafe_allow_html=True)
 
 # ---------- LOAD MODEL ----------
 model = joblib.load("model.pkl")
-
-emotion_labels = [
-    "Neutral", "Calm", "Happy", "Sad",
-    "Angry", "Fearful", "Disgust", "Surprised"
-]
 
 # ---------- FEATURE EXTRACTION ----------
 def extract_features(file_path):
@@ -85,18 +69,16 @@ def extract_features(file_path):
 
     return mfcc.reshape(1, -1)
 
-
 # ---------- SESSION STATE ----------
 if "rec_key" not in st.session_state:
     st.session_state.rec_key = 0
 
-
-# 🎙️ RECORD AUDIO
+# ---------- RECORD ----------
 st.subheader("🎙️ Record your voice")
 
 audio_data = st.audio_input(
     "Tap to record",
-    key=f"recorder_{st.session_state.rec_key}"
+    key=f"rec_{st.session_state.rec_key}"
 )
 
 if audio_data is not None:
@@ -108,19 +90,19 @@ if audio_data is not None:
 
     features = extract_features(temp_path)
 
-    # 🔥 REAL PREDICTION
     prediction = model.predict(features)[0]
 
     st.success(f"✨ Predicted Emotion: {prediction}")
 
-
-# RESET BUTTON
+# RESET
 if st.button("🗑️ Clear Recording"):
     st.session_state.rec_key += 1
     st.rerun()
 
+# ---------- DIVIDER ----------
+st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-# 📂 UPLOAD AUDIO
+# ---------- UPLOAD ----------
 st.subheader("📂 Upload Audio File")
 
 uploaded_file = st.file_uploader("Upload WAV", type=["wav"])
