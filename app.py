@@ -3,8 +3,6 @@ import numpy as np
 import librosa
 import tempfile
 import random
-from audiorecorder import audiorecorder
-import os
 
 st.title("🎤 Voice Emotion Detector")
 st.write("Record your voice OR upload a .wav file")
@@ -21,43 +19,33 @@ def extract_features(file_path):
     return mfcc
 
 
-# ================= 🎙️ RECORDING =================
+# 🎙️ RECORD AUDIO (NEW METHOD)
 st.subheader("🎙️ Record your voice")
 
-audio = audiorecorder("Start Recording", "Stop Recording")
+audio_data = st.audio_input("Record your voice")
 
-if len(audio) > 0:
+if audio_data is not None:
     try:
-        audio_bytes = audio.export().read()
+        st.audio(audio_data)
 
-        if audio_bytes is not None and len(audio_bytes) > 0:
-            st.audio(audio_bytes)
+        # Save file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+            tmp.write(audio_data.read())
+            temp_path = tmp.name
 
-            # Save safely
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-                tmp.write(audio_bytes)
-                temp_path = tmp.name
+        features = extract_features(temp_path)
+        prediction = random.choice(emotion_labels)
 
-            # Check file exists
-            if os.path.exists(temp_path):
-                features = extract_features(temp_path)
-                prediction = random.choice(emotion_labels)
+        st.success(f"Predicted Emotion: {prediction}")
 
-                st.success(f"Predicted Emotion: {prediction}")
-            else:
-                st.error("Recording file not saved properly.")
-
-        else:
-            st.warning("No audio recorded. Try again.")
-
-    except Exception as e:
-        st.error("Recording failed. Try using file upload.")
+    except:
+        st.error("Recording failed. Try again.")
 
 
-# ================= 📂 FILE UPLOAD =================
+# 📂 UPLOAD AUDIO
 st.subheader("📂 Upload audio file")
 
-uploaded_file = st.file_uploader("Upload a WAV file", type=["wav"])
+uploaded_file = st.file_uploader("Upload WAV", type=["wav"])
 
 if uploaded_file is not None:
     try:
@@ -72,5 +60,5 @@ if uploaded_file is not None:
 
         st.success(f"Predicted Emotion: {prediction}")
 
-    except Exception as e:
-        st.error("Error processing uploaded file.")
+    except:
+        st.error("File processing failed.")
