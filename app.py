@@ -19,27 +19,36 @@ def extract_features(file_path):
     return mfcc
 
 
-# 🎙️ RECORD AUDIO (NEW METHOD)
+# 🔁 SESSION STATE FOR RESET
+if "rec_key" not in st.session_state:
+    st.session_state.rec_key = 0
+
+
+# 🎙️ RECORD AUDIO (key changes every reset)
 st.subheader("🎙️ Record your voice")
 
-audio_data = st.audio_input("Record your voice")
+audio_data = st.audio_input(
+    "Record your voice",
+    key=f"recorder_{st.session_state.rec_key}"
+)
 
 if audio_data is not None:
-    try:
-        st.audio(audio_data)
+    st.audio(audio_data)
 
-        # Save file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            tmp.write(audio_data.read())
-            temp_path = tmp.name
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(audio_data.read())
+        temp_path = tmp.name
 
-        features = extract_features(temp_path)
-        prediction = random.choice(emotion_labels)
+    features = extract_features(temp_path)
+    prediction = random.choice(emotion_labels)
 
-        st.success(f"Predicted Emotion: {prediction}")
+    st.success(f"Predicted Emotion: {prediction}")
 
-    except:
-        st.error("Recording failed. Try again.")
+
+# 🔥 DELETE / RESET BUTTON (REAL FIX)
+if st.button("🗑️ Delete Recording"):
+    st.session_state.rec_key += 1   # key change = reset widget
+    st.rerun()
 
 
 # 📂 UPLOAD AUDIO
@@ -48,17 +57,13 @@ st.subheader("📂 Upload audio file")
 uploaded_file = st.file_uploader("Upload WAV", type=["wav"])
 
 if uploaded_file is not None:
-    try:
-        st.audio(uploaded_file)
+    st.audio(uploaded_file)
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            tmp.write(uploaded_file.read())
-            temp_path = tmp.name
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(uploaded_file.read())
+        temp_path = tmp.name
 
-        features = extract_features(temp_path)
-        prediction = random.choice(emotion_labels)
+    features = extract_features(temp_path)
+    prediction = random.choice(emotion_labels)
 
-        st.success(f"Predicted Emotion: {prediction}")
-
-    except:
-        st.error("File processing failed.")
+    st.success(f"Predicted Emotion: {prediction}")
