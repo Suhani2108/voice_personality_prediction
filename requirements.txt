@@ -2,4 +2,6 @@ streamlit
 numpy
 librosa
 scikit-learn
-
+tensorflow-cpu
+soundfile
+audioread
