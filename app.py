@@ -14,8 +14,6 @@ st.markdown("""
     background: linear-gradient(135deg, #0f172a, #1e293b, #020617);
     color: white;
 }
-
-/* Title */
 .title {
     text-align: center;
     font-size: 48px;
@@ -24,30 +22,16 @@ st.markdown("""
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
-
-/* Subtitle */
 .subtitle {
     text-align: center;
     font-size: 18px;
     color: #cbd5f5;
-    margin-bottom: 30px;
+    margin-bottom: 25px;
 }
-
-/* Divider */
 .divider {
     height: 2px;
     background: linear-gradient(90deg, transparent, #38bdf8, transparent);
     margin: 25px 0;
-}
-
-/* Button */
-.stButton > button {
-    border-radius: 10px;
-    background: linear-gradient(90deg, #6366f1, #38bdf8);
-    color: white;
-    font-weight: bold;
-    border: none;
-    padding: 10px 20px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -57,7 +41,10 @@ st.markdown('<div class="title">🎤 Voice Emotion AI</div>', unsafe_allow_html=
 st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>', unsafe_allow_html=True)
 
 # ---------- LOAD MODEL ----------
-model = joblib.load("model.pkl")
+try:
+    model = joblib.load("model.pkl")
+except:
+    model = None
 
 # ---------- FEATURE EXTRACTION ----------
 def extract_features(file_path):
@@ -69,17 +56,14 @@ def extract_features(file_path):
 
     return mfcc.reshape(1, -1)
 
-# ---------- SESSION STATE ----------
+# ---------- SESSION ----------
 if "rec_key" not in st.session_state:
     st.session_state.rec_key = 0
 
 # ---------- RECORD ----------
 st.subheader("🎙️ Record your voice")
 
-audio_data = st.audio_input(
-    "Tap to record",
-    key=f"rec_{st.session_state.rec_key}"
-)
+audio_data = st.audio_input("Tap to record", key=f"rec_{st.session_state.rec_key}")
 
 if audio_data is not None:
     st.audio(audio_data)
@@ -90,7 +74,10 @@ if audio_data is not None:
 
     features = extract_features(temp_path)
 
-    prediction = model.predict(features)[0]
+    if model:
+        prediction = model.predict(features)[0]
+    else:
+        prediction = "⚠ Model Missing"
 
     st.success(f"✨ Predicted Emotion: {prediction}")
 
@@ -116,6 +103,9 @@ if uploaded_file is not None:
 
     features = extract_features(temp_path)
 
-    prediction = model.predict(features)[0]
+    if model:
+        prediction = model.predict(features)[0]
+    else:
+        prediction = "⚠ Model Missing"
 
     st.success(f"✨ Predicted Emotion: {prediction}")
