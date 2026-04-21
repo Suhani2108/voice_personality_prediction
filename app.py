@@ -9,31 +9,39 @@ st.set_page_config(page_title="Voice Emotion AI", page_icon="🎤", layout="cent
 
 # ---------- CUSTOM CSS ----------
 st.markdown("""
-    <style>
-    .main {
-        background-color: #0f172a;
-        color: white;
-    }
-    .title {
-        text-align: center;
-        font-size: 42px;
-        font-weight: bold;
-        color: #38bdf8;
-    }
-    .subtitle {
-        text-align: center;
-        font-size: 18px;
-        color: #94a3b8;
-        margin-bottom: 20px;
-    }
-    .card {
-        background-color: #1e293b;
-        padding: 20px;
-        border-radius: 15px;
-        margin-top: 20px;
-        box-shadow: 0px 4px 20px rgba(0,0,0,0.3);
-    }
-    </style>
+<style>
+.main {
+    background-color: #0f172a;
+    color: white;
+}
+
+.title {
+    text-align: center;
+    font-size: 40px;
+    font-weight: bold;
+    color: #38bdf8;
+}
+
+.subtitle {
+    text-align: center;
+    font-size: 16px;
+    color: #94a3b8;
+    margin-bottom: 30px;
+}
+
+/* Remove card style */
+.section {
+    margin-top: 30px;
+}
+
+/* Divider line */
+.divider {
+    height: 1px;
+    background: #334155;
+    margin: 25px 0;
+    border-radius: 5px;
+}
+</style>
 """, unsafe_allow_html=True)
 
 # ---------- HEADER ----------
