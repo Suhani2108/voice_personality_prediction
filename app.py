@@ -4,7 +4,7 @@ import librosa
 import tempfile
 
 # ---------- PAGE CONFIG ----------
-st.set_page_config(page_title="Voice Emotion AI", page_icon="🎤", layout="centered")
+st.set_page_config(page_title="Voice Personality AI", page_icon="🎤", layout="centered")
 
 # ---------- CUSTOM CSS ----------
 st.markdown("""
