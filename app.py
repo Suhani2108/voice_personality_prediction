@@ -34,7 +34,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------- HEADER ----------
-st.markdown('<div class="title">🎤 Voice Emotion AI</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">🎤 Voice Personality AI</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>', unsafe_allow_html=True)
 
 # ---------- FEATURE EXTRACTION ----------
