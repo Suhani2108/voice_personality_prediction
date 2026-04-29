@@ -6,7 +6,13 @@ import joblib
 
 # ---------- LOAD MODEL ----------
 model = joblib.load("emotion_model.pkl")
+import os
 
+if not os.path.exists("emotion_model.pkl"):
+    st.error("❌ Model file not found. Upload emotion_model.pkl")
+    st.stop()
+
+model = joblib.load("emotion_model.pkl")
 # ---------- UI ----------
 st.set_page_config(page_title="Voice Personality AI", page_icon="🎤")
 
