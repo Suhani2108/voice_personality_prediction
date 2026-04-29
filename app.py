@@ -2,14 +2,6 @@ import streamlit as st
 import numpy as np
 import librosa
 import tempfile
-import joblib
-
-# ---------- LOAD MODEL ----------
-# Train separately and save as emotion_model.pkl
-try:
-    model = joblib.load("emotion_model.pkl")
-except:
-    model = None
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Voice Personality AI", page_icon="🎤", layout="centered")
@@ -55,33 +47,87 @@ def extract_features(file_path):
         if len(audio) < sr * 0.5:
             return None
 
-        mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=40)
-        mfcc_mean = np.mean(mfcc, axis=1)
-
-        zcr = np.mean(librosa.feature.zero_crossing_rate(audio))
+        # Core features
         rms = np.mean(librosa.feature.rms(y=audio))
+        zcr = np.mean(librosa.feature.zero_crossing_rate(audio))
         centroid = np.mean(librosa.feature.spectral_centroid(y=audio, sr=sr))
 
-        features = np.hstack([mfcc_mean, zcr, rms, centroid])
+        mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13)
+        mfcc_mean = np.mean(mfcc)
 
-        return features.reshape(1, -1)
+        tempo, _ = librosa.beat.beat_track(y=audio, sr=sr)
+
+        return {
+            "energy": rms,
+            "zcr": zcr,
+            "centroid": centroid,
+            "mfcc": mfcc_mean,
+            "tempo": tempo
+        }
 
     except Exception as ex:
         st.error(f"Feature extraction error: {ex}")
         return None
 
 
-# ---------- EMOTION PREDICTION ----------
-def predict_emotion(features):
-    if features is None:
+# ---------- SMART EMOTION SCORING ----------
+def predict_emotion(f):
+    if f is None:
         return "⚠️ Audio too short — please record at least 1 second"
 
-    if model is None:
-        return "⚠️ Model not found. Please train and save emotion_model.pkl"
+    energy = f["energy"]
+    zcr = f["zcr"]
+    centroid = f["centroid"]
+    mfcc = f["mfcc"]
+    tempo = f["tempo"]
 
-    prediction = model.predict(features)[0]
+    scores = {
+        "😄 Happy": 0,
+        "😢 Sad": 0,
+        "😡 Angry": 0,
+        "😌 Calm": 0,
+        "😐 Neutral": 0
+    }
 
-    return f"✨ Predicted Emotion: {prediction}"
+    # ---------- ENERGY ----------
+    if energy > 0.12:
+        scores["😡 Angry"] += 2
+        scores["😄 Happy"] += 1
+    elif energy < 0.04:
+        scores["😢 Sad"] += 2
+        scores["😌 Calm"] += 1
+    else:
+        scores["😐 Neutral"] += 1
+
+    # ---------- ZCR ----------
+    if zcr > 0.10:
+        scores["😡 Angry"] += 2
+    elif zcr < 0.05:
+        scores["😌 Calm"] += 2
+
+    # ---------- TEMPO ----------
+    if tempo > 140:
+        scores["😄 Happy"] += 2
+    elif tempo < 90:
+        scores["😢 Sad"] += 2
+
+    # ---------- SPECTRAL ----------
+    if centroid > 2500:
+        scores["😄 Happy"] += 1
+        scores["😡 Angry"] += 1
+    else:
+        scores["😌 Calm"] += 1
+
+    # ---------- MFCC ----------
+    if mfcc > -100:
+        scores["😄 Happy"] += 1
+    else:
+        scores["😢 Sad"] += 1
+
+    # ---------- FINAL DECISION ----------
+    best_emotion = max(scores, key=scores.get)
+
+    return f"✨ Predicted Emotion: {best_emotion}"
 
 
 # ---------- SESSION ----------
