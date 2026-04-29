@@ -69,7 +69,7 @@ def extract_features(file_path):
 
     # --- Tempo / rhythm ---
     tempo, _ = librosa.beat.beat_track(y=audio, sr=sr)
-    tempo = float(tempo)
+    tempo = float(np.squeeze(tempo))
 
     # --- Zero Crossing Rate ---
     zcr = librosa.feature.zero_crossing_rate(audio)[0]
