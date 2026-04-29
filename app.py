@@ -2,8 +2,13 @@ import streamlit as st
 import numpy as np
 import librosa
 import tempfile
-import soundfile as sf
-import os
+import joblib
+from keras.models import load_model
+
+# ---------- LOAD MODEL ----------
+model = load_model("model.h5")
+scaler = joblib.load("scaler.pkl")
+encoder = joblib.load("encoder.pkl")
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Voice Personality AI", page_icon="🎤", layout="centered")
@@ -12,111 +17,53 @@ st.set_page_config(page_title="Voice Personality AI", page_icon="🎤", layout="
 st.markdown('<div class="title">🎤 Voice Personality AI</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>', unsafe_allow_html=True)
 
-# ---------- FEATURE EXTRACTION ----------
+# ---------- FEATURE EXTRACTION (SAME AS TRAINING) ----------
 def extract_features(file_path):
-    try:
-        try:
-            audio, sr = librosa.load(file_path, sr=22050)
-        except:
-            audio, sr = sf.read(file_path)
-            if len(audio.shape) > 1:
-                audio = np.mean(audio, axis=1)
+    data, sample_rate = librosa.load(file_path, duration=2.5, offset=0.6)
 
-        audio, _ = librosa.effects.trim(audio, top_db=25)
+    result = np.array([])
 
-        if len(audio) < sr * 0.7:
-            return None
+    zcr = np.mean(librosa.feature.zero_crossing_rate(y=data).T, axis=0)
+    result = np.hstack((result, zcr))
 
-        rms = np.mean(librosa.feature.rms(y=audio))
-        zcr = np.mean(librosa.feature.zero_crossing_rate(audio))
-        centroid = np.mean(librosa.feature.spectral_centroid(y=audio, sr=sr))
+    stft = np.abs(librosa.stft(data))
+    chroma = np.mean(librosa.feature.chroma_stft(S=stft, sr=sample_rate).T, axis=0)
+    result = np.hstack((result, chroma))
 
-        tempo, _ = librosa.beat.beat_track(y=audio, sr=sr)
+    mfcc = np.mean(librosa.feature.mfcc(y=data, sr=sample_rate).T, axis=0)
+    result = np.hstack((result, mfcc))
 
-        # Pitch
-        f0, voiced, _ = librosa.pyin(audio, fmin=75, fmax=500, sr=sr)
-        f0 = f0[~np.isnan(f0)]
+    rms = np.mean(librosa.feature.rms(y=data).T, axis=0)
+    result = np.hstack((result, rms))
 
-        pitch_mean = np.mean(f0) if len(f0) > 0 else 180
-        pitch_std = np.std(f0) if len(f0) > 0 else 20
+    mel = np.mean(librosa.feature.melspectrogram(y=data, sr=sample_rate).T, axis=0)
+    result = np.hstack((result, mel))
 
-        return rms, zcr, centroid, tempo, pitch_mean, pitch_std
-
-    except:
-        return None
+    return result
 
 
-# ---------- IMPROVED EMOTION ----------
-def predict_emotion(f):
-    if f is None:
-        return "⚠️ Audio too short"
+# ---------- PREDICTION ----------
+def predict_emotion(file_path):
+    features = extract_features(file_path)
 
-    e, z, c, t, p, ps = f
+    features = features.reshape(1, -1)
 
-    scores = {
-        "😄 Happy": 0,
-        "😢 Sad": 0,
-        "😡 Angry": 0,
-        "😌 Calm": 0,
-        "😐 Neutral": 0,
-        "😨 Fearful": 0
-    }
+    # SAME SCALER
+    features = scaler.transform(features)
 
-    # ---------- BALANCED LOGIC ----------
+    # SAME SHAPE AS TRAINING
+    features = np.expand_dims(features, axis=2)
 
-    # Energy
-    if e > 0.15:
-        scores["😡 Angry"] += 2
-        scores["😄 Happy"] += 2
-    elif e < 0.05:
-        scores["😌 Calm"] += 2
-        scores["😢 Sad"] += 1
-    else:
-        scores["😐 Neutral"] += 2
+    # MODEL PREDICT
+    preds = model.predict(features)[0]
 
-    # Pitch (MOST IMPORTANT)
-    if p > 230:
-        scores["😨 Fearful"] += 3
-        scores["😄 Happy"] += 2
-    elif p < 150:
-        scores["😢 Sad"] += 2
-    else:
-        scores["😐 Neutral"] += 2
+    pred_index = np.argmax(preds)
+    confidence = float(np.max(preds) * 100)
 
-    # Pitch variation
-    if ps > 45:
-        scores["😡 Angry"] += 2
-        scores["😨 Fearful"] += 2
-    elif ps < 15:
-        scores["😌 Calm"] += 2
+    # DECODE LABEL
+    emotion = encoder.categories_[0][pred_index]
 
-    # Tempo
-    if t > 140:
-        scores["😄 Happy"] += 2
-    elif t < 90:
-        scores["😢 Sad"] += 2
-
-    # ZCR
-    if z > 0.12:
-        scores["😡 Angry"] += 2
-
-    # Spectral
-    if c > 2800:
-        scores["😄 Happy"] += 1
-
-    # ---------- DECISION ----------
-    best = max(scores, key=scores.get)
-    total = sum(scores.values())
-
-    # SAFE CONFIDENCE
-    conf = int((scores[best] / (total + 1e-6)) * 100)
-
-    # Neutral fallback (VERY IMPORTANT)
-    if conf < 35:
-        best = "😐 Neutral"
-        conf = 40
-
-    return f"✨ Predicted Emotion: {best} (Confidence: {conf}%)"
+    return f"✨ Predicted Emotion: {emotion} (Confidence: {confidence:.2f}%)"
 
 
 # ---------- SESSION ----------
@@ -129,16 +76,15 @@ audio_data = st.audio_input("Tap to record", key=f"rec_{st.session_state.rec_key
 
 if audio_data:
     st.audio(audio_data)
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         tmp.write(audio_data.read())
         path = tmp.name
 
     with st.spinner("Analyzing..."):
-        feats = extract_features(path)
-        prediction = predict_emotion(feats)
+        prediction = predict_emotion(path)
 
     st.success(prediction)
-    os.unlink(path)
 
 # ---------- RESET ----------
 if st.button("🗑️ Clear Recording"):
@@ -154,13 +100,12 @@ uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
 
 if uploaded_file:
     st.audio(uploaded_file)
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         tmp.write(uploaded_file.read())
         path = tmp.name
 
     with st.spinner("Analyzing..."):
-        feats = extract_features(path)
-        prediction = predict_emotion(feats)
+        prediction = predict_emotion(path)
 
     st.success(prediction)
-    os.unlink(path)
