@@ -21,9 +21,9 @@ def extract_features(file_path):
             return None
 
         # MFCC (13 coefficients, mean + std)
-        mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13)
-        mfcc_mean = np.mean(mfcc, axis=1)
-        mfcc_std  = np.std(mfcc,  axis=1)
+        mfcc      = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13)
+        mfcc_mean = np.mean(mfcc, axis=1).astype(float)   # shape (13,)
+        mfcc_std  = np.std(mfcc,  axis=1).astype(float)   # shape (13,)
 
         # Pitch via pyin
         f0, voiced_flag, _ = librosa.pyin(
@@ -32,11 +32,15 @@ def extract_features(file_path):
             fmax=librosa.note_to_hz('C7'),
             sr=sr
         )
-        f0_clean = f0[voiced_flag] if voiced_flag is not None else np.array([])
-        f0_clean = f0_clean[~np.isnan(f0_clean)]
+        if voiced_flag is not None and len(f0) > 0:
+            f0_clean = f0[voiced_flag.astype(bool)]
+            f0_clean = f0_clean[~np.isnan(f0_clean)]
+        else:
+            f0_clean = np.array([])
+
         pitch_mean  = float(np.mean(f0_clean))  if len(f0_clean) > 0 else 150.0
         pitch_std   = float(np.std(f0_clean))   if len(f0_clean) > 0 else 10.0
-        voiced_frac = len(f0_clean) / (len(f0) + 1e-9)
+        voiced_frac = float(len(f0_clean)) / float(max(len(f0), 1))
 
         # Energy
         rms_frames = librosa.feature.rms(y=audio)[0]
@@ -46,9 +50,12 @@ def extract_features(file_path):
         # ZCR
         zcr = float(np.mean(librosa.feature.zero_crossing_rate(audio)))
 
-        # Tempo
-        tempo, _ = librosa.beat.beat_track(y=audio, sr=sr)
-        tempo = float(tempo)
+        # Tempo — safe extraction for all librosa versions
+        tempo_result, _ = librosa.beat.beat_track(y=audio, sr=sr)
+        if np.ndim(tempo_result) == 0:
+            tempo = float(tempo_result)
+        else:
+            tempo = float(np.mean(tempo_result))
 
         # Spectral features
         centroid  = float(np.mean(librosa.feature.spectral_centroid(y=audio, sr=sr)))
@@ -57,7 +64,7 @@ def extract_features(file_path):
 
         # Spectral Contrast (7 bands)
         contrast      = librosa.feature.spectral_contrast(y=audio, sr=sr, n_bands=6)
-        contrast_mean = np.mean(contrast, axis=1)
+        contrast_mean = np.mean(contrast, axis=1).astype(float)   # shape (7,)
 
         # Chroma std
         chroma     = librosa.feature.chroma_stft(y=audio, sr=sr)
@@ -115,62 +122,62 @@ def predict_emotion(f):
     }
 
     # ANGRY: loud, fast, harsh, high ZCR, wide bandwidth
-    if rms > 0.10:                      scores["😡 Angry"] += 3.0
-    elif rms > 0.07:                    scores["😡 Angry"] += 1.5
-    if zcr > 0.10:                      scores["😡 Angry"] += 2.5
-    if bw > 2800:                       scores["😡 Angry"] += 2.0
-    elif bw > 2200:                     scores["😡 Angry"] += 1.0
-    if tempo > 135:                     scores["😡 Angry"] += 1.5
-    if contrast[5] > 22:                scores["😡 Angry"] += 2.0
-    if mfcc_m[1] > 10:                  scores["😡 Angry"] += 1.5
-    if rms_std > 0.05:                  scores["😡 Angry"] += 1.0
+    if rms > 0.10:                       scores["😡 Angry"] += 3.0
+    elif rms > 0.07:                     scores["😡 Angry"] += 1.5
+    if zcr > 0.10:                       scores["😡 Angry"] += 2.5
+    if bw > 2800:                        scores["😡 Angry"] += 2.0
+    elif bw > 2200:                      scores["😡 Angry"] += 1.0
+    if tempo > 135:                      scores["😡 Angry"] += 1.5
+    if contrast[5] > 22:                 scores["😡 Angry"] += 2.0
+    if mfcc_m[1] > 10:                   scores["😡 Angry"] += 1.5
+    if rms_std > 0.05:                   scores["😡 Angry"] += 1.0
 
     # SAD: quiet, slow, low pitch, monotone, narrow bandwidth
-    if rms < 0.035:                     scores["😢 Sad"] += 3.0
-    elif rms < 0.06:                    scores["😢 Sad"] += 1.5
-    if pm < 155 and pm > 60:            scores["😢 Sad"] += 2.5
-    if ps < 18:                         scores["😢 Sad"] += 2.0
-    if tempo < 80:                      scores["😢 Sad"] += 2.0
-    if vf < 0.35:                       scores["😢 Sad"] += 1.5
-    if bw < 1800:                       scores["😢 Sad"] += 1.5
-    if mfcc_m[0] < -250:                scores["😢 Sad"] += 1.0
+    if rms < 0.035:                      scores["😢 Sad"] += 3.0
+    elif rms < 0.06:                     scores["😢 Sad"] += 1.5
+    if 60 < pm < 155:                    scores["😢 Sad"] += 2.5
+    if ps < 18:                          scores["😢 Sad"] += 2.0
+    if tempo < 80:                       scores["😢 Sad"] += 2.0
+    if vf < 0.35:                        scores["😢 Sad"] += 1.5
+    if bw < 1800:                        scores["😢 Sad"] += 1.5
+    if mfcc_m[0] < -250:                 scores["😢 Sad"] += 1.0
 
     # HAPPY: bright, fast, high pitch, melodic, wide centroid
-    if pm > 210:                        scores["😄 Happy"] += 2.5
-    elif pm > 185:                      scores["😄 Happy"] += 1.0
-    if tempo > 120:                     scores["😄 Happy"] += 2.0
-    if centroid > 2600:                 scores["😄 Happy"] += 2.0
-    elif centroid > 2000:               scores["😄 Happy"] += 1.0
-    if chroma_s > 0.10:                 scores["😄 Happy"] += 2.0
-    if rms > 0.05 and rms < 0.13:      scores["😄 Happy"] += 1.0
-    if vf > 0.60:                       scores["😄 Happy"] += 1.0
-    if mfcc_m[2] > 8:                   scores["😄 Happy"] += 1.0
+    if pm > 210:                         scores["😄 Happy"] += 2.5
+    elif pm > 185:                       scores["😄 Happy"] += 1.0
+    if tempo > 120:                      scores["😄 Happy"] += 2.0
+    if centroid > 2600:                  scores["😄 Happy"] += 2.0
+    elif centroid > 2000:                scores["😄 Happy"] += 1.0
+    if chroma_s > 0.10:                  scores["😄 Happy"] += 2.0
+    if 0.05 < rms < 0.13:               scores["😄 Happy"] += 1.0
+    if vf > 0.60:                        scores["😄 Happy"] += 1.0
+    if mfcc_m[2] > 8:                    scores["😄 Happy"] += 1.0
 
     # CALM: steady moderate energy, stable pitch, low ZCR, tonal
-    if rms >= 0.025 and rms <= 0.075:   scores["😌 Calm"] += 2.0
-    if ps < 22:                         scores["😌 Calm"] += 2.5
-    if tempo >= 70 and tempo <= 110:    scores["😌 Calm"] += 2.0
-    if zcr < 0.055:                     scores["😌 Calm"] += 2.0
-    if flatness < 0.008:                scores["😌 Calm"] += 1.5
-    if vf > 0.55:                       scores["😌 Calm"] += 1.0
-    if rms_std < 0.03:                  scores["😌 Calm"] += 1.5
+    if 0.025 <= rms <= 0.075:            scores["😌 Calm"] += 2.0
+    if ps < 22:                          scores["😌 Calm"] += 2.5
+    if 70 <= tempo <= 110:               scores["😌 Calm"] += 2.0
+    if zcr < 0.055:                      scores["😌 Calm"] += 2.0
+    if flatness < 0.008:                 scores["😌 Calm"] += 1.5
+    if vf > 0.55:                        scores["😌 Calm"] += 1.0
+    if rms_std < 0.03:                   scores["😌 Calm"] += 1.5
 
     # DISGUST: creaky irregular pitch, muffled low spectrum, dull mid-timbre
-    if pm < 175 and ps > 28:            scores["🤢 Disgust"] += 2.5
-    if contrast[0] < 8:                 scores["🤢 Disgust"] += 2.0
-    if centroid < 1900:                 scores["🤢 Disgust"] += 1.5
-    if mfcc_m[4] < -8:                  scores["🤢 Disgust"] += 1.5
-    if rms_std > 0.04 and rms < 0.09:   scores["🤢 Disgust"] += 1.5
-    if zcr < 0.07 and flatness > 0.015: scores["🤢 Disgust"] += 1.5
+    if pm < 175 and ps > 28:             scores["🤢 Disgust"] += 2.5
+    if contrast[0] < 8:                  scores["🤢 Disgust"] += 2.0
+    if centroid < 1900:                  scores["🤢 Disgust"] += 1.5
+    if mfcc_m[4] < -8:                   scores["🤢 Disgust"] += 1.5
+    if rms_std > 0.04 and rms < 0.09:    scores["🤢 Disgust"] += 1.5
+    if zcr < 0.07 and flatness > 0.015:  scores["🤢 Disgust"] += 1.5
 
     # FEARFUL: high pitch variability, breathy, trembling energy, broken voicing
-    if pm > 225:                        scores["😨 Fearful"] += 2.0
-    if ps > 55:                         scores["😨 Fearful"] += 3.0
-    if flatness > 0.018:                scores["😨 Fearful"] += 2.0
-    if rms_std > 0.045:                 scores["😨 Fearful"] += 2.0
-    if zcr > 0.08 and rms < 0.08:      scores["😨 Fearful"] += 2.0
-    if vf < 0.42:                       scores["😨 Fearful"] += 1.5
-    if mfcc_s[0] > 85:                  scores["😨 Fearful"] += 1.5
+    if pm > 225:                         scores["😨 Fearful"] += 2.0
+    if ps > 55:                          scores["😨 Fearful"] += 3.0
+    if flatness > 0.018:                 scores["😨 Fearful"] += 2.0
+    if rms_std > 0.045:                  scores["😨 Fearful"] += 2.0
+    if zcr > 0.08 and rms < 0.08:       scores["😨 Fearful"] += 2.0
+    if vf < 0.42:                        scores["😨 Fearful"] += 1.5
+    if mfcc_s[0] > 85:                   scores["😨 Fearful"] += 1.5
 
     # Final decision
     total = sum(scores.values()) + 1e-9
