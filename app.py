@@ -2,67 +2,120 @@ import streamlit as st
 import numpy as np
 import librosa
 import tempfile
-from sklearn.neighbors import KNeighborsClassifier
+import os
 
 # ---------- PAGE CONFIG ----------
-st.set_page_config(page_title="Voice Personality AI", page_icon="🎤")
+st.set_page_config(page_title="Voice Personality AI", page_icon="🎤", layout="centered")
 
+# ---------- UI ----------
 st.markdown("## 🎤 Voice Personality AI")
-st.markdown("Real-time adaptive emotion detection")
-
-# ---------- MODEL (adaptive memory) ----------
-@st.cache_resource
-def init_model():
-    model = KNeighborsClassifier(n_neighbors=3)
-
-    # initial realistic patterns (not random)
-    X = np.array([
-        [0.02]*22,   # sad
-        [0.15]*22,   # happy
-        [0.20]*22,   # angry
-        [0.08]*22    # neutral
-    ])
-
-    y = np.array(["Sad", "Happy", "Angry", "Neutral"])
-
-    model.fit(X, y)
-    return model
-
-model = init_model()
+st.markdown("Speak or upload audio to detect emotion")
 
 # ---------- FEATURE EXTRACTION ----------
 def extract_features(file_path):
-    audio, sr = librosa.load(file_path, duration=3)
+    try:
+        audio, sr = librosa.load(file_path, duration=4)
+        audio, _ = librosa.effects.trim(audio)
 
-    mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=20)
-    mfcc_mean = np.mean(mfcc.T, axis=0)
+        # Energy
+        rms = np.mean(librosa.feature.rms(y=audio))
 
-    zcr = np.mean(librosa.feature.zero_crossing_rate(audio))
-    rms = np.mean(librosa.feature.rms(y=audio))
+        # ZCR
+        zcr = np.mean(librosa.feature.zero_crossing_rate(audio))
 
-    return np.hstack([mfcc_mean, zcr, rms]).reshape(1, -1)
+        # Tempo
+        tempo, _ = librosa.beat.beat_track(y=audio, sr=sr)
 
-# ---------- PREDICT ----------
-def predict_emotion(features):
-    pred = model.predict(features)[0]
+        # Pitch
+        f0, _, _ = librosa.pyin(audio, fmin=75, fmax=400)
+        f0 = f0[~np.isnan(f0)]
 
-    # confidence (distance-based)
-    dist, _ = model.kneighbors(features)
-    confidence = max(40, int(100 - dist[0][0]*100))
+        pitch_mean = np.mean(f0) if len(f0) > 0 else 180
+        pitch_std = np.std(f0) if len(f0) > 0 else 20
 
-    return pred, confidence
+        # Spectral
+        centroid = np.mean(librosa.feature.spectral_centroid(y=audio, sr=sr))
 
-# ---------- UPDATE MODEL (learning) ----------
-def update_model(features, label):
-    global model
-    X_new = np.vstack([model._fit_X, features])
-    y_new = np.append(model._y, label)
+        return rms, zcr, tempo, pitch_mean, pitch_std, centroid
 
-    model.fit(X_new, y_new)
+    except:
+        return None
+
+# ---------- EMOTION LOGIC ----------
+def predict_emotion(f):
+    if f is None:
+        return "⚠️ Audio too short"
+
+    e, z, t, p, ps, c = f
+
+    scores = {
+        "😄 Happy": 0,
+        "😢 Sad": 0,
+        "😡 Angry": 0,
+        "😌 Calm": 0,
+        "😨 Fear": 0,
+        "🤢 Disgust": 0
+    }
+
+    # Energy
+    if e > 0.15:
+        scores["😡 Angry"] += 2
+        scores["😄 Happy"] += 2
+    elif e < 0.05:
+        scores["😢 Sad"] += 2
+        scores["😌 Calm"] += 2
+    else:
+        scores["😌 Calm"] += 1
+
+    # Pitch
+    if p > 240:
+        scores["😨 Fear"] += 3
+        scores["😄 Happy"] += 1
+    elif p < 150:
+        scores["😢 Sad"] += 2
+
+    # Pitch variation
+    if ps > 50:
+        scores["😨 Fear"] += 2
+        scores["😡 Angry"] += 1
+    elif ps < 15:
+        scores["😌 Calm"] += 2
+
+    # Tempo
+    if t > 140:
+        scores["😄 Happy"] += 2
+    elif t < 90:
+        scores["😢 Sad"] += 2
+
+    # ZCR
+    if z > 0.12:
+        scores["😡 Angry"] += 2
+
+    # Spectral
+    if c > 3000:
+        scores["😄 Happy"] += 1
+    elif c < 1500:
+        scores["🤢 Disgust"] += 2
+
+    # Final decision
+    best = max(scores, key=scores.get)
+    total = sum(scores.values())
+    confidence = int((scores[best] / (total + 1e-6)) * 100)
+
+    if confidence < 35:
+        best = "😐 Neutral"
+        confidence = 40
+
+    return f"✨ Predicted Emotion: {best} (Confidence: {confidence}%)"
+
+
+# ---------- SESSION ----------
+if "rec_key" not in st.session_state:
+    st.session_state.rec_key = 0
 
 # ---------- RECORD ----------
 st.subheader("🎙️ Record your voice")
-audio_data = st.audio_input("Tap to record")
+audio_data = st.audio_input("Tap to record", key=f"rec_{st.session_state.rec_key}")
 
 if audio_data:
     st.audio(audio_data)
@@ -71,31 +124,34 @@ if audio_data:
         tmp.write(audio_data.read())
         path = tmp.name
 
-    with st.spinner("Analyzing..."):
+    with st.spinner("Analyzing voice..."):
         feats = extract_features(path)
-        pred, conf = predict_emotion(feats)
+        result = predict_emotion(feats)
 
-    st.success(f"✨ Predicted Emotion: {pred} (Confidence: {conf}%)")
+    st.success(result)
 
-    # optional learning
-    st.markdown("### Improve accuracy (optional)")
-    correct = st.selectbox("Correct emotion?", ["", "Happy", "Sad", "Angry", "Neutral"])
+    # DELETE OPTION
+    if st.button("🗑️ Delete Recording"):
+        os.unlink(path)
+        st.session_state.rec_key += 1
+        st.rerun()
 
-    if st.button("Update Model"):
-        if correct:
-            update_model(feats, correct)
-            st.success("✅ Model improved!")
+# ---------- DIVIDER ----------
+st.markdown("---")
 
 # ---------- UPLOAD ----------
 st.subheader("📂 Upload Audio File")
-uploaded_file = st.file_uploader("Upload WAV", type=["wav"])
+uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
 
 if uploaded_file:
+    st.audio(uploaded_file)
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         tmp.write(uploaded_file.read())
         path = tmp.name
 
-    feats = extract_features(path)
-    pred, conf = predict_emotion(feats)
+    with st.spinner("Analyzing voice..."):
+        feats = extract_features(path)
+        result = predict_emotion(feats)
 
-    st.success(f"✨ Predicted Emotion: {pred} (Confidence: {conf}%)")
+    st.success(result)
