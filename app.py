@@ -3,9 +3,9 @@ import numpy as np
 import librosa
 import tempfile
 import joblib
-from keras.models import load_model
+from tensorflow.keras.models import load_model  # ✅ FIXED
 
-# ---------- LOAD MODEL ----------
+# ---------- LOAD FILES ----------
 model = load_model("model.h5")
 scaler = joblib.load("scaler.pkl")
 encoder = joblib.load("encoder.pkl")
@@ -13,29 +13,62 @@ encoder = joblib.load("encoder.pkl")
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Voice Personality AI", page_icon="🎤", layout="centered")
 
-# ---------- UI ----------
+# ---------- CUSTOM CSS (UNCHANGED) ----------
+st.markdown("""
+<style>
+.main {
+    background-color: #0f172a;
+    color: white;
+}
+.title {
+    text-align: center;
+    font-size: 40px;
+    font-weight: bold;
+    color: #38bdf8;
+}
+.subtitle {
+    text-align: center;
+    font-size: 16px;
+    color: #94a3b8;
+    margin-bottom: 30px;
+}
+.divider {
+    height: 1px;
+    background: #334155;
+    margin: 25px 0;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------- HEADER ----------
 st.markdown('<div class="title">🎤 Voice Personality AI</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>', unsafe_allow_html=True)
 
-# ---------- FEATURE EXTRACTION (SAME AS TRAINING) ----------
+
+# ---------- FEATURE EXTRACTION (MATCH TRAINING) ----------
 def extract_features(file_path):
     data, sample_rate = librosa.load(file_path, duration=2.5, offset=0.6)
 
     result = np.array([])
 
+    # ZCR
     zcr = np.mean(librosa.feature.zero_crossing_rate(y=data).T, axis=0)
     result = np.hstack((result, zcr))
 
+    # Chroma
     stft = np.abs(librosa.stft(data))
     chroma = np.mean(librosa.feature.chroma_stft(S=stft, sr=sample_rate).T, axis=0)
     result = np.hstack((result, chroma))
 
+    # MFCC
     mfcc = np.mean(librosa.feature.mfcc(y=data, sr=sample_rate).T, axis=0)
     result = np.hstack((result, mfcc))
 
+    # RMS
     rms = np.mean(librosa.feature.rms(y=data).T, axis=0)
     result = np.hstack((result, rms))
 
+    # Mel
     mel = np.mean(librosa.feature.melspectrogram(y=data, sr=sample_rate).T, axis=0)
     result = np.hstack((result, mel))
 
@@ -48,19 +81,19 @@ def predict_emotion(file_path):
 
     features = features.reshape(1, -1)
 
-    # SAME SCALER
+    # Scale (same as training)
     features = scaler.transform(features)
 
-    # SAME SHAPE AS TRAINING
+    # CNN shape
     features = np.expand_dims(features, axis=2)
 
-    # MODEL PREDICT
+    # Predict
     preds = model.predict(features)[0]
 
     pred_index = np.argmax(preds)
     confidence = float(np.max(preds) * 100)
 
-    # DECODE LABEL
+    # Decode label
     emotion = encoder.categories_[0][pred_index]
 
     return f"✨ Predicted Emotion: {emotion} (Confidence: {confidence:.2f}%)"
