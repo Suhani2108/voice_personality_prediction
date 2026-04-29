@@ -1,4 +1,5 @@
 streamlit
-torchaudio
-speechbrain
-torch
+numpy
+librosa
+scikit-learn
+soundfile
