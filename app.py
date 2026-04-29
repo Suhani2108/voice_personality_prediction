@@ -3,21 +3,29 @@ import numpy as np
 import librosa
 import tempfile
 import joblib
-
-# ---------- LOAD MODEL ----------
-model = joblib.load("emotion_model.pkl")
 import os
 
-if not os.path.exists("emotion_model.pkl"):
-    st.error("❌ Model file not found. Upload emotion_model.pkl")
-    st.stop()
+# ---------- PAGE CONFIG ----------
+st.set_page_config(page_title="Voice Personality AI", page_icon="🎤", layout="centered")
 
-model = joblib.load("emotion_model.pkl")
 # ---------- UI ----------
-st.set_page_config(page_title="Voice Personality AI", page_icon="🎤")
-
 st.markdown('<div class="title">🎤 Voice Personality AI</div>', unsafe_allow_html=True)
 st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>', unsafe_allow_html=True)
+
+# ---------- LOAD MODEL SAFELY ----------
+MODEL_PATH = "emotion_model.pkl"
+
+model = None
+model_loaded = False
+
+if os.path.exists(MODEL_PATH):
+    try:
+        model = joblib.load(MODEL_PATH)
+        model_loaded = True
+    except:
+        st.error("❌ Model file is corrupted.")
+else:
+    st.warning("⚠️ Model not found. Using basic analysis (not AI).")
 
 # ---------- FEATURE EXTRACTION ----------
 def extract_features(file_path):
@@ -31,28 +39,67 @@ def extract_features(file_path):
 
     return np.hstack([mfcc_mean, zcr, rms]).reshape(1, -1)
 
-# ---------- PREDICT ----------
+# ---------- FALLBACK LOGIC ----------
+def basic_prediction(features):
+    energy = features[0][-1]  # RMS approx
+
+    if energy > 0.1:
+        return "😄 Happy (basic guess)"
+    elif energy < 0.03:
+        return "😢 Sad (basic guess)"
+    else:
+        return "😐 Neutral (basic guess)"
+
+# ---------- PREDICTION ----------
 def predict_emotion(file_path):
     features = extract_features(file_path)
-    pred = model.predict(features)[0]
-    return f"✨ Predicted Emotion: {pred}"
+
+    if model_loaded:
+        pred = model.predict(features)[0]
+        return f"✨ Predicted Emotion: {pred}"
+    else:
+        return f"⚠️ {basic_prediction(features)}"
+
+# ---------- SESSION ----------
+if "rec_key" not in st.session_state:
+    st.session_state.rec_key = 0
 
 # ---------- RECORD ----------
-audio_data = st.audio_input("🎙️ Record")
+st.subheader("🎙️ Record your voice")
+audio_data = st.audio_input("Tap to record", key=f"rec_{st.session_state.rec_key}")
 
 if audio_data:
+    st.audio(audio_data)
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         tmp.write(audio_data.read())
         path = tmp.name
 
-    st.success(predict_emotion(path))
+    with st.spinner("Analyzing..."):
+        result = predict_emotion(path)
+
+    st.success(result)
+
+# ---------- RESET ----------
+if st.button("🗑️ Clear Recording"):
+    st.session_state.rec_key += 1
+    st.rerun()
+
+# ---------- DIVIDER ----------
+st.markdown("---")
 
 # ---------- UPLOAD ----------
-uploaded_file = st.file_uploader("Upload WAV", type=["wav"])
+st.subheader("📂 Upload Audio File")
+uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
 
 if uploaded_file:
+    st.audio(uploaded_file)
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         tmp.write(uploaded_file.read())
         path = tmp.name
 
-    st.success(predict_emotion(path))
+    with st.spinner("Analyzing..."):
+        result = predict_emotion(path)
+
+    st.success(result)
