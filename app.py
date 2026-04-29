@@ -47,22 +47,38 @@ def extract_features(file_path):
         if len(audio) < sr * 0.5:
             return None
 
-        # Core features
+        # Energy
         rms = np.mean(librosa.feature.rms(y=audio))
+
+        # ZCR
         zcr = np.mean(librosa.feature.zero_crossing_rate(audio))
-        centroid = np.mean(librosa.feature.spectral_centroid(y=audio, sr=sr))
 
-        mfcc = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13)
-        mfcc_mean = np.mean(mfcc)
-
+        # Tempo
         tempo, _ = librosa.beat.beat_track(y=audio, sr=sr)
+
+        # Pitch (IMPORTANT)
+        f0, voiced_flag, _ = librosa.pyin(
+            audio,
+            fmin=librosa.note_to_hz('C2'),
+            fmax=librosa.note_to_hz('C7')
+        )
+        f0 = f0[~np.isnan(f0)]
+
+        pitch_mean = np.mean(f0) if len(f0) > 0 else 0
+        pitch_std = np.std(f0) if len(f0) > 0 else 0
+
+        # Spectral
+        centroid = np.mean(librosa.feature.spectral_centroid(y=audio, sr=sr))
+        bandwidth = np.mean(librosa.feature.spectral_bandwidth(y=audio, sr=sr))
 
         return {
             "energy": rms,
             "zcr": zcr,
+            "tempo": tempo,
+            "pitch_mean": pitch_mean,
+            "pitch_std": pitch_std,
             "centroid": centroid,
-            "mfcc": mfcc_mean,
-            "tempo": tempo
+            "bandwidth": bandwidth
         }
 
     except Exception as ex:
@@ -70,64 +86,75 @@ def extract_features(file_path):
         return None
 
 
-# ---------- SMART EMOTION SCORING ----------
+# ---------- IMPROVED EMOTION LOGIC ----------
 def predict_emotion(f):
     if f is None:
         return "⚠️ Audio too short — please record at least 1 second"
 
-    energy = f["energy"]
-    zcr = f["zcr"]
-    centroid = f["centroid"]
-    mfcc = f["mfcc"]
-    tempo = f["tempo"]
+    e = f["energy"]
+    z = f["zcr"]
+    t = f["tempo"]
+    p = f["pitch_mean"]
+    ps = f["pitch_std"]
+    c = f["centroid"]
 
     scores = {
         "😄 Happy": 0,
         "😢 Sad": 0,
         "😡 Angry": 0,
         "😌 Calm": 0,
-        "😐 Neutral": 0
+        "😐 Neutral": 0,
+        "😨 Fearful": 0
     }
 
-    # ---------- ENERGY ----------
-    if energy > 0.12:
+    # ENERGY
+    if e > 0.12:
         scores["😡 Angry"] += 2
         scores["😄 Happy"] += 1
-    elif energy < 0.04:
+    elif e < 0.04:
         scores["😢 Sad"] += 2
         scores["😌 Calm"] += 1
     else:
-        scores["😐 Neutral"] += 1
+        scores["😐 Neutral"] += 2
 
-    # ---------- ZCR ----------
-    if zcr > 0.10:
-        scores["😡 Angry"] += 2
-    elif zcr < 0.05:
+    # TEMPO
+    if t > 140:
+        scores["😄 Happy"] += 2
+        scores["😡 Angry"] += 1
+    elif t < 90:
+        scores["😢 Sad"] += 2
+        scores["😌 Calm"] += 1
+
+    # PITCH
+    if p > 220:
+        scores["😄 Happy"] += 2
+        scores["😨 Fearful"] += 1
+    elif p < 150:
+        scores["😢 Sad"] += 2
+
+    # PITCH VARIATION
+    if ps > 40:
+        scores["😨 Fearful"] += 2
+        scores["😡 Angry"] += 1
+    elif ps < 15:
         scores["😌 Calm"] += 2
 
-    # ---------- TEMPO ----------
-    if tempo > 140:
-        scores["😄 Happy"] += 2
-    elif tempo < 90:
-        scores["😢 Sad"] += 2
+    # ZCR
+    if z > 0.1:
+        scores["😡 Angry"] += 2
+    elif z < 0.05:
+        scores["😌 Calm"] += 2
 
-    # ---------- SPECTRAL ----------
-    if centroid > 2500:
-        scores["😄 Happy"] += 1
-        scores["😡 Angry"] += 1
-    else:
-        scores["😌 Calm"] += 1
-
-    # ---------- MFCC ----------
-    if mfcc > -100:
+    # SPECTRAL
+    if c > 2500:
         scores["😄 Happy"] += 1
     else:
         scores["😢 Sad"] += 1
 
-    # ---------- FINAL DECISION ----------
-    best_emotion = max(scores, key=scores.get)
+    # FINAL
+    best = max(scores, key=scores.get)
 
-    return f"✨ Predicted Emotion: {best_emotion}"
+    return f"✨ Predicted Emotion: {best}"
 
 
 # ---------- SESSION ----------
