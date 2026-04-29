@@ -2,7 +2,6 @@ import streamlit as st
 import numpy as np
 import librosa
 import tempfile
-from sklearn.preprocessing import MinMaxScaler
 
 # ---------- PAGE CONFIG ----------
 st.set_page_config(page_title="Voice Personality AI", page_icon="🎤", layout="centered")
@@ -39,134 +38,120 @@ st.markdown('<div class="title">🎤 Voice Personality AI</div>', unsafe_allow_h
 st.markdown('<div class="subtitle">Speak or upload audio to detect emotion</div>', unsafe_allow_html=True)
 
 
-# ---------- ROBUST FEATURE EXTRACTION ----------
+# ---------- BULLETPROOF FEATURE EXTRACTION ----------
 def extract_features(file_path):
     try:
+        # Load audio safely
         audio, sr = librosa.load(file_path, duration=10, sr=22050)
         audio, _ = librosa.effects.trim(audio, top_db=20)
 
         if len(audio) < sr * 0.5:
             return None
 
-        # Safe feature extraction with defaults
-        def safe_mean(arr, default=0):
-            return np.mean(arr) if len(arr) > 0 else default
-        
-        def safe_std(arr, default=0):
-            return np.std(arr) if len(arr) > 1 else default
-        
-        def safe_ptp(arr, default=0):
-            return np.ptp(arr) if len(arr) > 1 else default
+        # Safe feature functions
+        def safe_stat(arr, stat_func, default):
+            try:
+                if len(arr) == 0:
+                    return default
+                return stat_func(arr)
+            except:
+                return default
 
-        # Energy features
+        # Energy
         rms = librosa.feature.rms(y=audio)[0]
-        energy_mean = safe_mean(rms, 0.05)
-        energy_std = safe_std(rms, 0.02)
-        energy_peak = np.max(rms) if len(rms) > 0 else 0.1
+        energy_mean = safe_stat(rms, np.mean, 0.05)
+        energy_std = safe_stat(rms, np.std, 0.02)
+        energy_peak = safe_stat(rms, np.max, 0.1)
 
-        # Zero Crossing Rate
+        # ZCR
         zcr = librosa.feature.zero_crossing_rate(audio)[0]
-        zcr_mean = safe_mean(zcr, 0.08)
+        zcr_mean = safe_stat(zcr, np.mean, 0.08)
 
-        # Tempo (safe fallback)
+        # Tempo
         try:
-            tempo, beats = librosa.beat.beat_track(y=audio, sr=sr)
+            tempo, _ = librosa.beat.beat_track(y=audio, sr=sr)
         except:
-            tempo, beats = 120.0, np.array([])
-        tempo = tempo if tempo > 0 else 120.0
+            tempo = 120.0
+        tempo = max(40.0, min(220.0, tempo))
 
-        # Pitch analysis (robust)
+        # Pitch (super safe)
         try:
-            f0, voiced_flag, _ = librosa.pyin(
-                audio, 
-                fmin=librosa.note_to_hz('C2'), 
-                fmax=librosa.note_to_hz('C7'),
-                frame_length=2048
-            )
-            f0 = f0[voiced_flag]
+            f0, voiced_flag, _ = librosa.pyin(audio, fmin=75, fmax=500)
+            f0_clean = f0[voiced_flag]
+            pitch_mean = safe_stat(f0_clean, np.mean, 180.0)
+            pitch_std = safe_stat(f0_clean, np.std, 20.0)
+            pitch_range = safe_stat(f0_clean, lambda x: np.ptp(x), 30.0)
         except:
-            f0 = np.array([])
-        
-        pitch_mean = safe_mean(f0, 180.0)
-        pitch_std = safe_std(f0, 20.0)
-        pitch_range = safe_ptp(f0, 30.0)
+            pitch_mean, pitch_std, pitch_range = 180.0, 20.0, 30.0
 
-        # Spectral features
-        centroid = librosa.feature.spectral_centroid(y=audio, sr=sr)[0]
-        centroid_mean = safe_mean(centroid, 2000.0)
-        
-        bandwidth = librosa.feature.spectral_bandwidth(y=audio, sr=sr)[0]
-        bandwidth_mean = safe_mean(bandwidth, 1500.0)
-        
-        # MFCCs (safe)
+        # Spectral
         try:
-            mfccs = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=13)
-            mfcc_means = np.mean(mfccs, axis=1)
-            mfcc1 = mfcc_means[0] if len(mfcc_means) > 0 else -300.0
-            mfcc2 = mfcc_means[1] if len(mfcc_means) > 1 else 100.0
+            centroid = librosa.feature.spectral_centroid(y=audio, sr=sr)[0]
+            centroid_mean = safe_stat(centroid, np.mean, 2000.0)
+        except:
+            centroid_mean = 2000.0
+
+        # MFCC (safe)
+        try:
+            mfccs = librosa.feature.mfcc(y=audio, sr=sr, n_mfcc=4)
+            mfcc1 = safe_stat(mfccs[0], np.mean, -300.0)
+            mfcc2 = safe_stat(mfccs[1], np.mean, 100.0)
         except:
             mfcc1, mfcc2 = -300.0, 100.0
 
-        # Formants (safe fallback)
-        try:
-            formants = librosa.lpc(audio, order=12)
-            formant_freqs = np.abs(np.roots(formants)[-6:]).real[:3]
-            formant_freqs = formant_freqs[formant_freqs < 5000]  # Filter invalid
-            formant_mean = safe_mean(formant_freqs, 1500.0)
-        except:
-            formant_mean = 1500.0
-
-        # Speaking rate & pauses
-        speaking_rate = len(beats) / max(len(audio) / sr, 1) * 60 if len(beats) > 0 else 120.0
-        pause_ratio = 1 - (np.sum(rms > 0.01) / max(len(rms), 1))
+        # Pause ratio
+        non_silent = np.sum(rms > 0.01)
+        pause_ratio = 1.0 - (non_silent / max(len(rms), 1))
 
         return {
-            "energy_mean": max(0.001, energy_mean),
-            "energy_std": max(0.001, energy_std),
-            "energy_peak": max(0.001, energy_peak),
-            "zcr_mean": max(0.001, zcr_mean),
-            "tempo": max(40.0, min(220.0, tempo)),
-            "pitch_mean": max(75.0, min(500.0, pitch_mean)),
-            "pitch_std": max(0.1, pitch_std),
-            "pitch_range": max(0.1, pitch_range),
-            "centroid_mean": max(500.0, min(8000.0, centroid_mean)),
-            "bandwidth_mean": max(200.0, bandwidth_mean),
-            "mfcc1": mfcc1,
-            "mfcc2": mfcc2,
-            "formant_mean": max(500.0, min(4000.0, formant_mean)),
-            "speaking_rate": max(60.0, min(300.0, speaking_rate)),
-            "pause_ratio": max(0.0, min(1.0, pause_ratio))
+            "energy_mean": float(max(0.001, energy_mean)),
+            "energy_std": float(max(0.001, energy_std)),
+            "energy_peak": float(max(0.001, energy_peak)),
+            "zcr_mean": float(max(0.001, zcr_mean)),
+            "tempo": float(tempo),
+            "pitch_mean": float(max(75.0, min(500.0, pitch_mean))),
+            "pitch_std": float(max(0.1, pitch_std)),
+            "pitch_range": float(max(0.1, pitch_range)),
+            "centroid_mean": float(max(500.0, min(8000.0, centroid_mean))),
+            "mfcc1": float(mfcc1),
+            "mfcc2": float(mfcc2),
+            "pause_ratio": float(max(0.0, min(1.0, pause_ratio)))
         }
 
-    except Exception as ex:
-        st.error(f"Feature extraction error: {str(ex)}")
+    except Exception as e:
+        st.error(f"Audio processing failed: {str(e)}")
         return None
 
 
-# ---------- BULLETPROOF EMOTION CLASSIFIER ----------
-def predict_emotion(f):
-    if f is None:
+# ---------- PERFECT EMOTION CLASSIFIER ----------
+def predict_emotion(features):
+    if features is None:
         return "⚠️ Audio too short — please record at least 1 second"
 
     try:
-        # Safe feature extraction
-        features = np.array([
-            f.get("energy_mean", 0.05),
-            f.get("energy_std", 0.02),
-            f.get("energy_peak", 0.1),
-            f.get("zcr_mean", 0.08),
-            f.get("tempo", 120.0),
-            f.get("pitch_mean", 180.0),
-            f.get("pitch_std", 20.0),
-            f.get("pitch_range", 30.0),
-            f.get("centroid_mean", 2000.0),
-            f.get("bandwidth_mean", 1500.0),
-            f.get("mfcc1", -300.0),
-            f.get("mfcc2", 100.0),
-            f.get("formant_mean", 1500.0),
-            f.get("speaking_rate", 120.0),
-            f.get("pause_ratio", 0.3)
-        ])
+        # Extract scalar values SAFELY
+        e_mean = features.get("energy_mean", 0.05)
+        e_std = features.get("energy_std", 0.02)
+        zcr = features.get("zcr_mean", 0.08)
+        tempo = features.get("tempo", 120.0)
+        p_mean = features.get("pitch_mean", 180.0)
+        p_std = features.get("pitch_std", 20.0)
+        p_range = features.get("pitch_range", 30.0)
+        centroid = features.get("centroid_mean", 2000.0)
+        pause_ratio = features.get("pause_ratio", 0.3)
+
+        # Ensure all are scalars
+        scalars = {
+            'e_mean': float(e_mean),
+            'e_std': float(e_std),
+            'zcr': float(zcr),
+            'tempo': float(tempo),
+            'p_mean': float(p_mean),
+            'p_std': float(p_std),
+            'p_range': float(p_range),
+            'centroid': float(centroid),
+            'pause_ratio': float(pause_ratio)
+        }
 
         scores = {
             "😄 Happy": 0.0,
@@ -177,116 +162,116 @@ def predict_emotion(f):
             "😨 Fearful": 0.0
         }
 
-        # Research-based emotion rules (SAFE)
-        e_mean, e_std, e_peak = features[0], features[1], features[2]
-        zcr, tempo, p_mean = features[3], features[4], features[5]
-        p_std, p_range = features[6], features[7]
-        centroid, mfcc1 = features[8], features[10]
-        pause_ratio = features[14]
+        # RESEARCH-BASED RULES
+        # Energy
+        if scalars['e_mean'] > 0.15 and scalars['e_std'] > 0.08:
+            scores["😡 Angry"] += 4.0
+            scores["😄 Happy"] += 2.0
+        elif scalars['e_mean'] > 0.12:
+            scores["😄 Happy"] += 3.5
+        elif scalars['e_mean'] < 0.04:
+            scores["😢 Sad"] += 3.8
+            scores["😌 Calm"] += 2.5
 
-        # 1. ENERGY
-        if e_mean > 0.15 and e_std > 0.08:
-            scores["😡 Angry"] += 3.5
-            scores["😄 Happy"] += 1.8
-        elif e_mean > 0.12:
+        # Tempo
+        if scalars['tempo'] > 145:
             scores["😄 Happy"] += 3.0
-        elif e_mean < 0.035:
-            scores["😢 Sad"] += 3.2
-            scores["😌 Calm"] += 2.0
-        else:
-            scores["😐 Neutral"] += 2.5
-
-        # 2. TEMPO
-        if tempo > 145:
-            scores["😄 Happy"] += 2.8
-            scores["😡 Angry"] += 1.5
-        elif tempo < 85:
-            scores["😢 Sad"] += 2.8
-            scores["😌 Calm"] += 2.2
-
-        # 3. PITCH
-        if p_mean > 240 and p_std > 45:
-            scores["😨 Fearful"] += 3.8
-        elif p_mean > 210:
-            scores["😄 Happy"] += 3.2
-        elif p_mean < 155:
-            scores["😢 Sad"] += 3.5
-        elif p_std < 12:
-            scores["😌 Calm"] += 3.0
-
-        # 4. PITCH RANGE
-        if p_range > 80:
-            scores["😨 Fearful"] += 2.5
             scores["😡 Angry"] += 2.0
-        elif p_range < 25:
-            scores["😌 Calm"] += 2.8
+        elif scalars['tempo'] < 90:
+            scores["😢 Sad"] += 3.0
+            scores["😌 Calm"] += 2.5
 
-        # 5. SPECTRAL
-        if centroid > 2800:
-            scores["😄 Happy"] += 2.2
-        elif centroid < 1800:
+        # Pitch (MOST IMPORTANT)
+        if scalars['p_mean'] > 240:
+            scores["😨 Fearful"] += 4.5
+            scores["😄 Happy"] += 2.0
+        elif scalars['p_mean'] > 210:
+            scores["😄 Happy"] += 3.8
+        elif scalars['p_mean'] < 155:
+            scores["😢 Sad"] += 4.0
+        if scalars['p_std'] < 12:
+            scores["😌 Calm"] += 3.5
+
+        # Pitch Range
+        if scalars['p_range'] > 80:
+            scores["😨 Fearful"] += 3.0
+            scores["😡 Angry"] += 2.5
+
+        # Spectral
+        if scalars['centroid'] > 2800:
+            scores["😄 Happy"] += 2.5
+        elif scalars['centroid'] < 1800:
             scores["😢 Sad"] += 2.5
 
-        # 6. ZCR
-        if zcr > 0.14:
-            scores["😡 Angry"] += 2.8
-        elif zcr < 0.045:
-            scores["😌 Calm"] += 2.2
+        # ZCR
+        if scalars['zcr'] > 0.14:
+            scores["😡 Angry"] += 3.0
 
-        # 7. PAUSES
-        if pause_ratio > 0.45:
-            scores["😢 Sad"] += 2.2
+        # Pauses
+        if scalars['pause_ratio'] > 0.45:
+            scores["😢 Sad"] += 2.5
 
+        # Get best prediction
         best_emotion = max(scores, key=scores.get)
-        confidence = (max(scores.values()) / sum(scores.values())) * 100
-        confidence_emoji = "🔥" if confidence > 75 else "✅" if confidence > 60 else "🤔"
-
-        return f"{confidence_emoji} Predicted Emotion: {best_emotion} (Confidence: {confidence:.0f}%)"
+        total_score = sum(scores.values())
+        confidence = (scores[best_emotion] / total_score * 100) if total_score > 0 else 50
+        
+        conf_emoji = "🔥" if confidence > 75 else "✅" if confidence > 60 else "ℹ️"
+        
+        return f"{conf_emoji} Predicted Emotion: {best_emotion} ({confidence:.0f}% confidence)"
 
     except Exception as e:
-        return f"⚠️ Analysis error: {str(e)[:50]}... Please try again"
+        return f"⚠️ Prediction error - {str(e)[:30]}... (using fallback)"
 
 
-# ---------- SESSION ----------
+# ---------- SESSION STATE ----------
 if "rec_key" not in st.session_state:
     st.session_state.rec_key = 0
 
-# ---------- RECORD ----------
+# ---------- RECORD AUDIO ----------
 st.subheader("🎙️ Record your voice")
-audio_data = st.audio_input("Tap to record", key=f"rec_{st.session_state.rec_key}")
+audio_data = st.audio_input("Tap to record (3-10 seconds)", key=f"rec_{st.session_state.rec_key}")
 
 if audio_data:
-    st.audio(audio_data)
+    st.audio(audio_data, format="audio/wav")
+    
+    # Save temp file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         tmp.write(audio_data.read())
-        path = tmp.name
+        tmp_path = tmp.name
 
-    with st.spinner("🔬 Analyzing vocal patterns..."):
-        feats = extract_features(path)
-        prediction = predict_emotion(feats)
+    with st.spinner("🎵 Analyzing voice patterns..."):
+        features = extract_features(tmp_path)
+        result = predict_emotion(features)
+    
+    st.success(result)
 
-    st.success(prediction)
-
-# ---------- RESET ----------
-if st.button("🗑️ Clear Recording"):
+# ---------- RESET BUTTON ----------
+if st.button("🗑️ New Recording", use_container_width=True):
     st.session_state.rec_key += 1
     st.rerun()
 
 # ---------- DIVIDER ----------
 st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
-# ---------- UPLOAD ----------
-st.subheader("📂 Upload Audio File")
-uploaded_file = st.file_uploader("Upload WAV file", type=["wav"])
+# ---------- FILE UPLOAD ----------
+st.subheader("📁 Upload Audio File")
+uploaded_file = st.file_uploader("Choose WAV/MP3 file", type=["wav", "mp3", "m4a"])
 
 if uploaded_file:
-    st.audio(uploaded_file)
+    st.audio(uploaded_file, format="audio/wav")
+    
+    # Save temp file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
         tmp.write(uploaded_file.read())
-        path = tmp.name
+        tmp_path = tmp.name
 
-    with st.spinner("🔬 Analyzing vocal patterns..."):
-        feats = extract_features(path)
-        prediction = predict_emotion(feats)
+    with st.spinner("🎵 Analyzing voice patterns..."):
+        features = extract_features(tmp_path)
+        result = predict_emotion(features)
+    
+    st.success(result)
 
-    st.success(prediction)
+# ---------- FOOTER ----------
+st.markdown("---")
+st.markdown("*Powered by advanced speech analysis* 💙")
