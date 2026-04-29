@@ -1,11 +1,7 @@
 streamlit
 numpy
-librosa
-soundfile
-streamlit
-numpy
-librosa
-scikit-learn
+librosa==0.10.1
+scikit-learn==1.3.2
 joblib
 soundfile
-tensorflow==2.15.0
+tensorflow-cpu==2.12.0
